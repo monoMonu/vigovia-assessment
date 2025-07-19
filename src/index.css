@@ -1,0 +1,35 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --color-vigovia-purple: #6B46C1;
+  --color-vigovia-blue: #3B82F6;
+}
+
+body {
+  font-family: 'Inter', sans-serif;
+}
+
+.gradient-bg {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.card {
+  @apply bg-white rounded-lg shadow-lg p-6 border border-gray-200;
+}
+
+.input-field {
+  @apply w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-vigovia-purple focus:border-transparent outline-none transition-all;
+}
+
+.btn-primary {
+  @apply bg-vigovia-purple text-white px-6 py-3 rounded-lg hover:bg-purple-700 transition-all duration-200 flex items-center gap-2 font-medium;
+}
+
+.btn-secondary {
+  @apply bg-gray-100 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-200 transition-all duration-200 flex items-center gap-2 text-sm font-medium;
+}
+
+.btn-danger {
+  @apply bg-red-500 text-white px-3 py-1 rounded-lg hover:bg-red-600 transition-all duration-200 flex items-center gap-1 text-sm;
+}
