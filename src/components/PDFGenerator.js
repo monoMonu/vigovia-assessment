@@ -369,7 +369,7 @@ class PDFGenerator {
          this.doc.setFont('helvetica', 'normal');
 
          this.doc.text(installment.name, this.margin + 5, this.currentY + 8);
-         this.doc.text(installment.amount > 0 ? `Rs${installment.amount.toLocaleString()}` : 'Remaining',
+         this.doc.text(installment.amount > 0 ? `Rs${installment.amount.toLocaleString()}` : 'No Remaining',
             this.margin + colWidth + 5, this.currentY + 8);
          this.doc.text(installment.due, this.margin + 2 * colWidth + 5, this.currentY + 8);
 

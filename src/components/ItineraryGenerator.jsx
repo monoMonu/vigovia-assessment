@@ -16,14 +16,16 @@ import PDFGenerator from './PDFGenerator';
 import Header from './Header';
 import Footer from './Footer';
 
-
-const COST_PER_NIGHT_PER_ROOM = 4000; // ₹4000 per night per hotel room
-const COST_PER_FLIGHT = 8000;         // ₹8000 per flight per traveler
-const COST_PER_ACTIVITY = 500;        // ₹500 per activity per traveler
-
 const ItineraryGenerator = () => {
    const [isGenerating, setIsGenerating] = useState(false);
-   const { control, handleSubmit, watch, setValue, formState: { errors } } = useForm({
+   const [result, setResult] = useState(null);
+   const {
+      control,
+      handleSubmit,
+      watch,
+      setValue,
+      formState: { errors }
+   } = useForm({
       defaultValues: {
          customerName: '',
          destination: '',
@@ -61,9 +63,10 @@ const ItineraryGenerator = () => {
                name: '',
                checkIn: '',
                checkOut: '',
-               nights: 0,
+               nights: 1
             }
          ],
+         totalAmount: 0,
          installment1: 0,
          installment2: 0
       }
@@ -85,31 +88,74 @@ const ItineraryGenerator = () => {
    });
 
    const watchedData = watch();
-   const calculatedTotal = calculateTotalAmount(watchedData);
 
    const addActivity = (dayIndex) => {
       const currentDay = watchedData.days[dayIndex];
-      const updatedActivities = [...currentDay.activities, {
-         time: 'Afternoon',
-         title: '',
-         description: '',
-         duration: '',
-         type: 'Sightseeing'
-      }];
+      const updatedActivities = [
+         ...currentDay.activities,
+         {
+            time: 'Afternoon',
+            title: '',
+            description: '',
+            duration: '',
+            type: 'Sightseeing'
+         }
+      ];
       setValue(`days.${dayIndex}.activities`, updatedActivities);
    };
 
    const removeActivity = (dayIndex, activityIndex) => {
       const currentDay = watchedData.days[dayIndex];
-      const updatedActivities = currentDay.activities.filter((_, index) => index !== activityIndex);
+      const updatedActivities = currentDay.activities.filter((_, i) => i !== activityIndex);
       setValue(`days.${dayIndex}.activities`, updatedActivities);
+   };
+
+   const calculateNights = (checkIn, checkOut) => {
+      if (checkIn && checkOut) {
+         const start = new Date(checkIn);
+         const end = new Date(checkOut);
+         const diff = Math.ceil((end - start) / (1000 * 60 * 60 * 24));
+         return diff > 0 ? diff : 0;
+      }
+      return 0;
    };
 
    const onSubmit = async (data) => {
       setIsGenerating(true);
       try {
-         const pdfGenerator = new PDFGenerator();
-         await pdfGenerator.generatePDF({...data, totalAmount: calculateTotalAmount(watchedData)});
+         const sanitizedData = {
+            ...data,
+            travelers: Number(data.travelers),
+            totalAmount: Number(data.totalAmount),
+            installment1: Number(data.installment1),
+            installment2: Number(data.installment2),
+            hotels: data.hotels.map(hotel => ({
+               ...hotel,
+               nights: Number(hotel.nights)
+            })),
+            days: data.days.map(day => ({
+               ...day,
+               activities: day.activities.map(act => ({
+                  ...act,
+                  duration: Number(act.duration) || 0
+               }))
+            }))
+         };
+         
+         // console.log("Requets : ", JSON.stringify(sanitizedData));
+         const res = await fetch("http://localhost:3002/generate-itinerary", {
+            method: 'POST',
+            headers: {
+               'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(sanitizedData)
+         });
+
+         const resData = await res.json();
+
+         setResult(resData);
+
+         if (!res.ok) throw new Error("Bad response");
          toast.success('Itinerary generated successfully!');
       } catch (error) {
          console.error('Error generating PDF:', error);
@@ -118,37 +164,8 @@ const ItineraryGenerator = () => {
       setIsGenerating(false);
    };
 
-   function calculateTotalAmount(data) {
-      const travelers = parseInt(data.travelers || 1, 10);
 
-      // Hotel cost
-      const hotelCost = (data.hotels || []).reduce((sum, hotel) => {
-         const nights = parseInt(hotel.nights || 0, 10);
-         return sum + (nights * COST_PER_NIGHT_PER_ROOM);
-      }, 0);
-
-      // Flight cost per traveler
-      const flightCost = (data.flights?.length || 0) * COST_PER_FLIGHT * travelers;
-
-      // Activity cost per traveler
-      const activityCount = data.days?.reduce((total, day) => {
-         return total + (day.activities?.length || 0);
-      }, 0);
-      const activityCost = activityCount * COST_PER_ACTIVITY * travelers;
-
-      return hotelCost + flightCost + activityCost;
-   };
-
-   const calculateNights = (date1, date2) => {
-      if (date1 && date2) {
-         const departure = new Date(date1);
-         const returnDate = new Date(date2);
-         const diffTime = Math.abs(returnDate - departure);
-         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-         return diffDays;
-      }
-      return 0;
-   };
+   const remainingBalance = watchedData.totalAmount - watchedData.installment1 - watchedData.installment2;
 
    return (
       <div className="min-h-screen bg-gray-50">
@@ -157,12 +174,11 @@ const ItineraryGenerator = () => {
          <main className="container mx-auto px-4 py-8">
             <div className="max-w-4xl mx-auto">
                <div className="text-center mb-8">
-                  <h1 className="text-4xl font-bold text-gray-900 mb-2">Create Your Perfect Itinerary</h1>
-                  <p className="text-gray-600">Design a customized travel experience with detailed day-by-day planning</p>
+                  <h1 className="text-4xl font-bold text-gray-900 mb-2">Post-Booking Itinerary Details</h1>
+                  <p className="text-gray-600">Review and customize your finalized travel itinerary</p>
                </div>
 
                <form onSubmit={handleSubmit(onSubmit)} className="space-y-8">
-                  {/* Basic Information */}
                   <div className="card">
                      <h2 className="text-2xl font-semibold text-gray-900 mb-6 flex items-center gap-2">
                         <MapPin className="w-6 h-6 text-vigovia-purple" />
@@ -171,31 +187,23 @@ const ItineraryGenerator = () => {
 
                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div>
-                           <label className="block text-sm font-medium text-gray-700 mb-2">
-                              Customer Name *
-                           </label>
+                           <label className="block text-sm font-medium text-gray-700 mb-2">Customer Name *</label>
                            <input
                               {...control.register('customerName', { required: 'Customer name is required' })}
                               className="input-field"
                               placeholder="Enter customer name"
                            />
-                           {errors.customerName && (
-                              <p className="text-red-500 text-sm mt-1">{errors.customerName.message}</p>
-                           )}
+                           {errors.customerName && <p className="text-red-500 text-sm mt-1">{errors.customerName.message}</p>}
                         </div>
 
                         <div>
-                           <label className="block text-sm font-medium text-gray-700 mb-2">
-                              Destination *
-                           </label>
+                           <label className="block text-sm font-medium text-gray-700 mb-2">Destination *</label>
                            <input
                               {...control.register('destination', { required: 'Destination is required' })}
                               className="input-field"
                               placeholder="e.g., Singapore"
                            />
-                           {errors.destination && (
-                              <p className="text-red-500 text-sm mt-1">{errors.destination.message}</p>
-                           )}
+                           {errors.destination && <p className="text-red-500 text-sm mt-1">{errors.destination.message}</p>}
                         </div>
 
                         <div>
@@ -212,9 +220,7 @@ const ItineraryGenerator = () => {
                         </div>
 
                         <div>
-                           <label className="block text-sm font-medium text-gray-700 mb-2">
-                              Departure From *
-                           </label>
+                           <label className="block text-sm font-medium text-gray-700 mb-2">Departure From *</label>
                            <input
                               {...control.register('departureFrom', { required: 'Departure location is required' })}
                               className="input-field"
@@ -245,25 +251,9 @@ const ItineraryGenerator = () => {
                               className="input-field"
                            />
                         </div>
-
-                        <div className="bg-blue-50 p-4 rounded-lg">
-                           <p className="text-sm text-blue-800">
-                              <strong>Total Estimated Amount:</strong> ₹{calculatedTotal}
-                           </p>
-                        </div>
-
-                        <div>
-                           <div className="bg-blue-50 p-4 rounded-lg">
-                              <p className="text-sm text-blue-800">
-                                 <strong>Trip Duration:</strong> {calculateNights(watchedData.departureDate, watchedData.returnDate) && 
-                                    `${calculateNights(watchedData.departureDate, watchedData.returnDate)} nights, ${calculateNights(watchedData.departureDate, watchedData.returnDate) + 1} days`}
-                              </p>
-                           </div>
-                        </div>
                      </div>
                   </div>
 
-                  {/* Daily Itinerary */}
                   <div className="card">
                      <div className="flex justify-between items-center mb-6">
                         <h2 className="text-2xl font-semibold text-gray-900 flex items-center gap-2">
@@ -272,16 +262,20 @@ const ItineraryGenerator = () => {
                         </h2>
                         <button
                            type="button"
-                           onClick={() => appendDay({
-                              date: '',
-                              activities: [{
-                                 time: 'Morning',
-                                 title: '',
-                                 description: '',
-                                 duration: '',
-                                 type: 'Sightseeing'
-                              }]
-                           })}
+                           onClick={() =>
+                              appendDay({
+                                 date: '',
+                                 activities: [
+                                    {
+                                       time: 'Morning',
+                                       title: '',
+                                       description: '',
+                                       duration: '',
+                                       type: 'Sightseeing'
+                                    }
+                                 ]
+                              })
+                           }
                            className="btn-secondary"
                         >
                            <Plus className="w-4 h-4" />
@@ -306,9 +300,7 @@ const ItineraryGenerator = () => {
 
                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                               <div>
-                                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                                    Date
-                                 </label>
+                                 <label className="block text-sm font-medium text-gray-700 mb-2">Date</label>
                                  <input
                                     type="date"
                                     {...control.register(`days.${dayIndex}.date`)}
@@ -330,71 +322,74 @@ const ItineraryGenerator = () => {
                                  </button>
                               </div>
 
-                              {watchedData.days[dayIndex]?.activities?.map((activity, activityIndex) => (
-                                 <div key={activityIndex} className="bg-gray-50 p-3 rounded border">
-                                    <div className="flex justify-between items-start mb-3">
-                                       <span className="text-sm font-medium text-gray-700">Activity {activityIndex + 1}</span>
-                                       {watchedData.days[dayIndex].activities.length > 1 && (
-                                          <button
-                                             type="button"
-                                             onClick={() => removeActivity(dayIndex, activityIndex)}
-                                             className="text-red-500 hover:text-red-700"
-                                          >
-                                             <Trash2 className="w-4 h-4" />
-                                          </button>
-                                       )}
-                                    </div>
+                              {(watchedData.days?.[dayIndex]?.activities || []).map((activity, activityIndex) => (
+                                 <div
+                                    key={activityIndex}
+                                    className="border border-gray-300 rounded p-3 relative"
+                                 >
+                                    {watchedData.days[dayIndex].activities.length > 1 && (
+                                       <button
+                                          type="button"
+                                          onClick={() => removeActivity(dayIndex, activityIndex)}
+                                          className="absolute top-2 right-2 btn-danger btn-sm"
+                                       >
+                                          <Trash2 className="w-3 h-3" />
+                                       </button>
+                                    )}
 
                                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
                                        <div>
+                                          <label className="block text-sm font-medium text-gray-700 mb-1">Time</label>
                                           <select
                                              {...control.register(`days.${dayIndex}.activities.${activityIndex}.time`)}
-                                             className="input-field text-sm"
+                                             className="input-field"
                                           >
-                                             <option value="Morning">Morning</option>
-                                             <option value="Afternoon">Afternoon</option>
-                                             <option value="Evening">Evening</option>
-                                             <option value="Night">Night</option>
+                                             <option>Morning</option>
+                                             <option>Afternoon</option>
+                                             <option>Evening</option>
+                                             <option>Night</option>
                                           </select>
                                        </div>
 
                                        <div>
+                                          <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
                                           <input
                                              {...control.register(`days.${dayIndex}.activities.${activityIndex}.title`)}
                                              placeholder="Activity title"
-                                             className="input-field text-sm"
+                                             className="input-field"
                                           />
                                        </div>
 
                                        <div>
+                                          <label className="block text-sm font-medium text-gray-700 mb-1">Duration</label>
                                           <input
                                              {...control.register(`days.${dayIndex}.activities.${activityIndex}.duration`)}
-                                             placeholder="Duration (e.g., 2-3 Hours)"
-                                             className="input-field text-sm"
+                                             placeholder="e.g., 2 hours"
+                                             className="input-field"
                                           />
                                        </div>
 
                                        <div>
+                                          <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
                                           <select
                                              {...control.register(`days.${dayIndex}.activities.${activityIndex}.type`)}
-                                             className="input-field text-sm"
+                                             className="input-field"
                                           >
-                                             <option value="Sightseeing">Sightseeing</option>
-                                             <option value="Adventure">Adventure</option>
-                                             <option value="Cultural">Cultural</option>
-                                             <option value="Relaxation">Relaxation</option>
-                                             <option value="Shopping">Shopping</option>
-                                             <option value="Food">Food & Dining</option>
+                                             <option>Sightseeing</option>
+                                             <option>Meal</option>
+                                             <option>Transfer</option>
+                                             <option>Leisure</option>
                                           </select>
                                        </div>
                                     </div>
 
-                                    <div className="mt-3">
+                                    <div className="mt-2">
+                                       <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
                                        <textarea
                                           {...control.register(`days.${dayIndex}.activities.${activityIndex}.description`)}
-                                          placeholder="Activity description"
-                                          className="input-field text-sm"
-                                          rows="2"
+                                          rows={2}
+                                          placeholder="Brief description"
+                                          className="input-field resize-none"
                                        />
                                     </div>
                                  </div>
@@ -404,7 +399,6 @@ const ItineraryGenerator = () => {
                      ))}
                   </div>
 
-                  {/* Flight Details */}
                   <div className="card">
                      <div className="flex justify-between items-center mb-6">
                         <h2 className="text-2xl font-semibold text-gray-900 flex items-center gap-2">
@@ -413,14 +407,16 @@ const ItineraryGenerator = () => {
                         </h2>
                         <button
                            type="button"
-                           onClick={() => appendFlight({
-                              date: '',
-                              airline: 'Air India',
-                              from: '',
-                              to: '',
-                              departure: '',
-                              arrival: ''
-                           })}
+                           onClick={() =>
+                              appendFlight({
+                                 date: '',
+                                 airline: 'Air India',
+                                 from: '',
+                                 to: '',
+                                 departure: '',
+                                 arrival: ''
+                              })
+                           }
                            className="btn-secondary"
                         >
                            <Plus className="w-4 h-4" />
@@ -459,12 +455,11 @@ const ItineraryGenerator = () => {
                                     {...control.register(`flights.${index}.airline`)}
                                     className="input-field"
                                  >
-                                    <option value="Air India">Air India</option>
-                                    <option value="IndiGo">IndiGo</option>
-                                    <option value="SpiceJet">SpiceJet</option>
-                                    <option value="Vistara">Vistara</option>
-                                    <option value="Singapore Airlines">Singapore Airlines</option>
-                                    <option value="Emirates">Emirates</option>
+                                    <option>Air India</option>
+                                    <option>IndiGo</option>
+                                    <option>Vistara</option>
+                                    <option>SpiceJet</option>
+                                    <option>GoAir</option>
                                  </select>
                               </div>
 
@@ -472,7 +467,7 @@ const ItineraryGenerator = () => {
                                  <label className="block text-sm font-medium text-gray-700 mb-2">From</label>
                                  <input
                                     {...control.register(`flights.${index}.from`)}
-                                    placeholder="Departure city"
+                                    placeholder="Departure airport/city"
                                     className="input-field"
                                  />
                               </div>
@@ -481,7 +476,7 @@ const ItineraryGenerator = () => {
                                  <label className="block text-sm font-medium text-gray-700 mb-2">To</label>
                                  <input
                                     {...control.register(`flights.${index}.to`)}
-                                    placeholder="Arrival city"
+                                    placeholder="Arrival airport/city"
                                     className="input-field"
                                  />
                               </div>
@@ -508,7 +503,6 @@ const ItineraryGenerator = () => {
                      ))}
                   </div>
 
-                  {/* Hotel Bookings */}
                   <div className="card">
                      <div className="flex justify-between items-center mb-6">
                         <h2 className="text-2xl font-semibold text-gray-900 flex items-center gap-2">
@@ -517,13 +511,15 @@ const ItineraryGenerator = () => {
                         </h2>
                         <button
                            type="button"
-                           onClick={() => appendHotel({
-                              city: '',
-                              name: '',
-                              checkIn: '',
-                              checkOut: '',
-                              nights: 1
-                           })}
+                           onClick={() =>
+                              appendHotel({
+                                 city: '',
+                                 name: '',
+                                 checkIn: '',
+                                 checkOut: '',
+                                 nights: 1
+                              })
+                           }
                            className="btn-secondary"
                         >
                            <Plus className="w-4 h-4" />
@@ -564,10 +560,14 @@ const ItineraryGenerator = () => {
                                     className="input-field"
                                  />
                               </div>
-                              
+
                               <div className="bg-blue-50 p-4 rounded-lg">
                                  <p className="text-sm text-blue-800">
-                                    <strong>Total days:</strong> {'0' && calculateNights(watchedData.hotels[index].checkIn, watchedData.hotels[index].checkOut)}
+                                    <strong>Total nights:</strong>{' '}
+                                    {calculateNights(
+                                       watchedData.hotels?.[index]?.checkIn,
+                                       watchedData.hotels?.[index]?.checkOut
+                                    )}
                                  </p>
                               </div>
 
@@ -593,7 +593,6 @@ const ItineraryGenerator = () => {
                      ))}
                   </div>
 
-                  {/* Payment Plan */}
                   <div className="card">
                      <h2 className="text-2xl font-semibold text-gray-900 mb-6 flex items-center gap-2">
                         <IndianRupee className="w-6 h-6 text-vigovia-purple" />
@@ -601,6 +600,17 @@ const ItineraryGenerator = () => {
                      </h2>
 
                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                           <label className="block text-sm font-medium text-gray-700 mb-2">Total Amount (₹)</label>
+                           <input
+                              type="number"
+                              min="0"
+                              {...control.register('totalAmount')}
+                              className="input-field"
+                              placeholder="Total booked amount"
+                           />
+                        </div>
+
                         <div>
                            <label className="block text-sm font-medium text-gray-700 mb-2">
                               First Installment (₹)
@@ -610,9 +620,8 @@ const ItineraryGenerator = () => {
                               min="0"
                               {...control.register('installment1')}
                               className="input-field"
-                              placeholder="Initial payment amount"
+                              placeholder="First installment paid"
                            />
-                           <p className="text-xs text-gray-500 mt-1">Due: Initial Payment</p>
                         </div>
 
                         <div>
@@ -624,22 +633,18 @@ const ItineraryGenerator = () => {
                               min="0"
                               {...control.register('installment2')}
                               className="input-field"
-                              placeholder="Post visa approval amount"
+                              placeholder="Second installment paid"
                            />
-                           <p className="text-xs text-gray-500 mt-1">Due: Post Visa Approval</p>
                         </div>
-                     </div>
-
-                     <div className="mt-4 p-4 bg-blue-50 rounded-lg">
-                        <p className="text-sm text-blue-800">
-                           <strong>Remaining Amount:</strong> ₹{Math.max(calculatedTotal - (watchedData.installment1 || 0) - (watchedData.installment2 || 0), 0)}
-                           <br />
-                           <small>Due: 20 days before departure</small>
-                        </p>
+                        <div className="bg-blue-50 p-4 rounded-lg">
+                           <p className="text-sm text-blue-800">
+                              <strong>Remaining Balance :</strong>{' '}
+                              Rs. {remainingBalance > 0 ? remainingBalance : 0}
+                           </p>
+                        </div>
                      </div>
                   </div>
 
-                  {/* Generate Button */}
                   <div className="text-center">
                      <button
                         type="submit"
@@ -651,6 +656,16 @@ const ItineraryGenerator = () => {
                      </button>
                   </div>
                </form>
+
+               <div className='pt-8 px-5 text-center'>
+                  {result ? 
+                  <p>
+                     Genearted PDF location in file system : {result.url}
+                  </p> : 
+                  <p>
+                     Generated PDF Link will appear here...   
+                  </p>}
+               </div>
             </div>
          </main>
 
