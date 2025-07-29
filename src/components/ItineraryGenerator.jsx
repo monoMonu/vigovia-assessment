@@ -17,6 +17,7 @@ import Header from './Header';
 import Footer from './Footer';
 
 const ItineraryGenerator = () => {
+   const serverURL = import.meta.env.VITE_SERVER_API;
    const [isGenerating, setIsGenerating] = useState(false);
    const [result, setResult] = useState(null);
    const {
@@ -143,7 +144,7 @@ const ItineraryGenerator = () => {
          };
          
          // console.log("Requets : ", JSON.stringify(sanitizedData));
-         const res = await fetch("http://localhost:3002/generate-itinerary", {
+         const res = await fetch(`${serverURL}/generate-itinerary`, {
             method: 'POST',
             headers: {
                'Content-Type': 'application/json',
