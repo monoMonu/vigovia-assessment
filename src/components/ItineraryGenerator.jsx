@@ -660,7 +660,7 @@ const ItineraryGenerator = () => {
                <div className='pt-8 px-5 text-center'>
                   {result ? 
                   <p>
-                     Genearted PDF location in file system : {result.url}
+                     Genearted PDF location in file system : <a href={result.url}></a>
                   </p> : 
                   <p>
                      Generated PDF Link will appear here...   
